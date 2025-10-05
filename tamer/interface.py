@@ -3,10 +3,15 @@ import pygame
 
 
 class Interface:
-    """ Pygame interface for training TAMER """
+    """ Pygame interface for rendering gym environment and training TAMER """
 
-    def __init__(self, action_map):
+    def __init__(self, action_map, env_frame_shape, tamer):
         self.action_map = action_map
+        self.tamer = tamer
+        self.env_frame_shape = env_frame_shape
+        self.PANEL_HEIGHT = 100
+        self.panel_color = (0, 0, 0)
+
         pygame.init()
         self.font = pygame.font.Font("freesansbold.ttf", 32)
 
@@ -14,40 +19,59 @@ class Interface:
         os.environ["SDL_VIDEO_WINDOW_POS"] = "1000,100"
         os.environ["SDL_VIDEO_CENTERED"] = "0"
 
-        self.screen = pygame.display.set_mode((200, 100))
+        # extend the screen size to display agent action if tamer
+        height, width, _ = self.env_frame_shape
+        screen_size = (width, height+(100 if tamer else 0))
+        self.screen = pygame.display.set_mode(screen_size)
         area = self.screen.fill((0, 0, 0))
         pygame.display.update(area)
 
-    def get_scalar_feedback(self):
-        """
-        Get human input. 'W' key for positive, 'A' key for negative.
-        Returns: scalar reward (1 for positive, -1 for negative)
+    def render(self, env_frame, action):
+        """ Renders a frame given environment frame and action. If
+            training tamer, listen for scalar feedback and displays 
+            agent action. 
+
+        Args:
+            env_frame ((int, int, int)): environment frame of shape (x, y, 3)
+            action (int): action agent is executing
+            tamer (bool, optional): TAMER training enabled. Defaults to False.
         """
         reward = 0
-        area = None
+        env_height, env_width, _ = self.env_frame_shape
+        panel_rect = pygame.Rect(
+            0, env_height, env_width, self.PANEL_HEIGHT)
+
         for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            # event handling for tamer
+            if event.type == pygame.KEYDOWN and self.tamer:
                 if event.key == pygame.K_w:
-                    area = self.screen.fill((0, 255, 0))
+                    self.panel_color = (0, 255, 0)
                     reward = 1
                     break
                 elif event.key == pygame.K_a:
-                    area = self.screen.fill((255, 0, 0))
+                    self.panel_color = (255, 0, 0)
                     reward = -1
                     break
-        pygame.display.update(area)
-        return reward
 
-    def show_action(self, action):
-        """
-        Show agent's action on pygame screen
-        Args:
-            action: numerical action (for MountainCar environment only currently)
-        """
-        area = self.screen.fill((0, 0, 0))
-        pygame.display.update(area)
-        text = self.font.render(self.action_map[action], True, (255, 255, 255))
-        text_rect = text.get_rect()
-        text_rect.center = (100, 50)
-        area = self.screen.blit(text, text_rect)
-        pygame.display.update(area)
+        surf = pygame.surfarray.make_surface(env_frame.swapaxes(0, 1))
+
+        self.screen.fill((0, 0, 0))
+        self.screen.blit(surf, (0, 0))
+
+        if self.tamer:
+            # start drawing right below the gym env
+            pygame.draw.rect(self.screen, self.panel_color,
+                             panel_rect)  # background
+            text = self.font.render(
+                self.action_map[action], True, (255, 255, 255))
+            text_rect = text.get_rect(
+                center=(env_frame.shape[1] // 2, env_height + 50))
+            self.screen.blit(text, text_rect)
+
+        pygame.display.flip()
+        self.panel_color = (0, 0, 0)
+        return reward

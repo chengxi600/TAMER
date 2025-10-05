@@ -13,6 +13,8 @@ from sklearn import pipeline, preprocessing
 from sklearn.kernel_approximation import RBFSampler
 from sklearn.linear_model import SGDRegressor
 
+from .interface import Interface
+
 MOUNTAINCAR_ACTION_MAP = {0: 'left', 1: 'none', 2: 'right'}
 MODELS_DIR = Path(__file__).parent.joinpath('saved_models')
 LOGS_DIR = Path(__file__).parent.joinpath('logs')
@@ -20,8 +22,9 @@ LOGS_DIR = Path(__file__).parent.joinpath('logs')
 
 class SGDFunctionApproximator:
     """ SGD function approximator with RBF preprocessing. """
+
     def __init__(self, env):
-        
+
         # Feature preprocessing: Normalize to zero mean and unit variance
         # We use a few samples from the observation space to do this
         observation_examples = np.array(
@@ -45,7 +48,8 @@ class SGDFunctionApproximator:
         self.models = []
         for _ in range(env.action_space.n):
             model = SGDRegressor(learning_rate='constant')
-            model.partial_fit([self.featurize_state(env.reset())], [0])
+            obs, _ = env.reset()
+            model.partial_fit([self.featurize_state(obs)], [0])
             self.models.append(model)
 
     def predict(self, state, action=None):
@@ -71,12 +75,13 @@ class Tamer:
     QLearning Agent adapted to TAMER using steps from:
     http://www.cs.utexas.edu/users/bradknox/kcap09/Knox_and_Stone,_K-CAP_2009.html
     """
+
     def __init__(
         self,
         env,
         num_episodes,
         discount_factor=1,  # only affects Q-learning
-        epsilon=0, # only affects Q-learning
+        epsilon=0,  # only affects Q-learning
         min_eps=0,  # minimum value for epsilon after annealing
         tame=True,  # set to false for normal Q-learning
         ts_len=0.2,  # length of timestep for training TAMER
@@ -116,36 +121,38 @@ class Tamer:
             'Human Reward',
             'Environment Reward',
         ]
-        self.reward_log_path = os.path.join(self.output_dir, f'{self.uuid}.csv')
+        self.reward_log_path = os.path.join(
+            self.output_dir, f'{self.uuid}.csv')
 
     def act(self, state):
         """ Epsilon-greedy Policy """
         if np.random.random() < 1 - self.epsilon:
-            preds = self.H.predict(state) if self.tame else self.Q.predict(state)
+            preds = self.H.predict(
+                state) if self.tame else self.Q.predict(state)
             return np.argmax(preds)
         else:
             return np.random.randint(0, self.env.action_space.n)
 
-    def _train_episode(self, episode_index, disp):
+    def _train_episode(self, episode_index, disp: Interface):
         print(f'Episode: {episode_index + 1}  Timestep:', end='')
-        rng = np.random.default_rng()
         tot_reward = 0
-        state = self.env.reset()
+        state, _ = self.env.reset()
         ep_start_time = dt.datetime.now().time()
         with open(self.reward_log_path, 'a+', newline='') as write_obj:
-            dict_writer = DictWriter(write_obj, fieldnames=self.reward_log_columns)
+            dict_writer = DictWriter(
+                write_obj, fieldnames=self.reward_log_columns)
             dict_writer.writeheader()
             for ts in count():
-                print(f' {ts}', end='')
-                self.env.render()
+                print(f'Time: {ts}', end='')
+                frame = self.env.render()
 
                 # Determine next action
                 action = self.act(state)
-                if self.tame:
-                    disp.show_action(action)
+                human_reward = disp.render(frame, action)
 
                 # Get next state and reward
-                next_state, reward, done, info = self.env.step(action)
+                next_state, reward, done, truncated, info = self.env.step(
+                    action)
 
                 if not self.tame:
                     if done and next_state[0] >= 0.5:
@@ -156,13 +163,13 @@ class Tamer:
                         )
                     self.Q.update(state, action, td_target)
                 else:
+                    pass
                     now = time.time()
                     while time.time() < now + self.ts_len:
                         frame = None
 
                         time.sleep(0.01)  # save the CPU
 
-                        human_reward = disp.get_scalar_feedback()
                         feedback_ts = dt.datetime.now().time()
                         if human_reward != 0:
                             dict_writer.writerow(
@@ -196,12 +203,9 @@ class Tamer:
             model_file_to_save: save Q or H model to this filename
         """
         # render first so that pygame display shows up on top
-        self.env.render()
-        disp = None
-        if self.tame:
-            # only init pygame display if we're actually training tamer
-            from .interface import Interface
-            disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP)
+        frame = self.env.render()
+        disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
+                         env_frame_shape=frame.shape, tamer=self.tame)
 
         for i in range(self.num_episodes):
             self._train_episode(i, disp)
@@ -223,7 +227,7 @@ class Tamer:
         self.epsilon = 0
         ep_rewards = []
         for i in range(n_episodes):
-            state = self.env.reset()
+            state, _ = self.env.reset()
             done = False
             tot_reward = 0
             while not done:
