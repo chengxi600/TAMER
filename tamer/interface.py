@@ -26,37 +26,37 @@ class Interface:
         area = self.screen.fill((0, 0, 0))
         pygame.display.update(area)
 
+    def get_scalar_feedback(self):
+        """ Gets scalar feedback from key press events. Updates panel color.
+
+        Returns:
+            int: scalar reward
+        """
+        reward = 0
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN and self.tamer:
+                if event.key == pygame.K_w:
+                    self.panel_color = (0, 255, 0)
+                    reward = 1
+                    self.panel_timer = 0   # reset panel display timer
+                elif event.key == pygame.K_a:
+                    self.panel_color = (255, 0, 0)
+                    reward = -1
+                    self.panel_timer = 0
+        return reward
+
     def render(self, env_frame, action):
         """ Renders a frame given environment frame and action. If
-            training tamer, listen for scalar feedback and displays 
-            agent action. 
+            training tamer, displays agent action. 
 
         Args:
             env_frame ((int, int, int)): environment frame of shape (x, y, 3)
             action (int): action agent is executing
             tamer (bool, optional): TAMER training enabled. Defaults to False.
         """
-        reward = 0
-        env_height, env_width, _ = self.env_frame_shape
-        panel_rect = pygame.Rect(
-            0, env_height, env_width, self.PANEL_HEIGHT)
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
-
-            # event handling for tamer
-            if event.type == pygame.KEYDOWN and self.tamer:
-                if event.key == pygame.K_w:
-                    self.panel_color = (0, 255, 0)
-                    reward = 1
-                    break
-                elif event.key == pygame.K_a:
-                    self.panel_color = (255, 0, 0)
-                    reward = -1
-                    break
-
         surf = pygame.surfarray.make_surface(env_frame.swapaxes(0, 1))
 
         self.screen.fill((0, 0, 0))
@@ -64,8 +64,13 @@ class Interface:
 
         if self.tamer:
             # start drawing right below the gym env
+            env_height, env_width, _ = self.env_frame_shape
+            panel_rect = pygame.Rect(
+                0, env_height, env_width, self.PANEL_HEIGHT)
             pygame.draw.rect(self.screen, self.panel_color,
                              panel_rect)  # background
+
+            # render text
             text = self.font.render(
                 self.action_map[action], True, (255, 255, 255))
             text_rect = text.get_rect(
@@ -74,4 +79,3 @@ class Interface:
 
         pygame.display.flip()
         self.panel_color = (0, 0, 0)
-        return reward

@@ -5,8 +5,6 @@ When training, use 'W' and 'A' keys for positive and negative rewards
 
 import asyncio
 import gymnasium as gym
-import pygame
-import numpy as np
 
 from tamer.agent import Tamer
 

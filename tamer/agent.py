@@ -148,7 +148,7 @@ class Tamer:
 
                 # Determine next action
                 action = self.act(state)
-                human_reward = disp.render(frame, action)
+                disp.render(frame, action)
 
                 # Get next state and reward
                 next_state, reward, done, truncated, info = self.env.step(
@@ -170,6 +170,7 @@ class Tamer:
 
                         time.sleep(0.01)  # save the CPU
 
+                        human_reward = disp.get_scalar_feedback()
                         feedback_ts = dt.datetime.now().time()
                         if human_reward != 0:
                             dict_writer.writerow(
@@ -202,11 +203,8 @@ class Tamer:
         Args:
             model_file_to_save: save Q or H model to this filename
         """
-        # render first so that pygame display shows up on top
-        frame = self.env.render()
         disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
-                         env_frame_shape=frame.shape, tamer=self.tame)
-
+                         env_frame_shape=self.env.render().shape, tamer=self.tame)
         for i in range(self.num_episodes):
             self._train_episode(i, disp)
 
@@ -226,16 +224,20 @@ class Tamer:
         """
         self.epsilon = 0
         ep_rewards = []
+        if render:
+            disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
+                             env_frame_shape=self.env.render().shape, tamer=False)
         for i in range(n_episodes):
             state, _ = self.env.reset()
             done = False
             tot_reward = 0
             while not done:
                 action = self.act(state)
-                next_state, reward, done, info = self.env.step(action)
+                next_state, reward, done, truncated, info = self.env.step(
+                    action)
                 tot_reward += reward
                 if render:
-                    self.env.render()
+                    disp.render(self.env.render(), action)
                 state = next_state
             ep_rewards.append(tot_reward)
             print(f'Episode: {i + 1} Reward: {tot_reward}')
