@@ -209,7 +209,7 @@ class Tamer:
             self._train_episode(i, disp)
 
         print('\nCleaning up...')
-        self.env.close()
+        disp.close()
         if model_file_to_save is not None:
             self.save_model(filename=model_file_to_save)
 
@@ -241,7 +241,7 @@ class Tamer:
                 state = next_state
             ep_rewards.append(tot_reward)
             print(f'Episode: {i + 1} Reward: {tot_reward}')
-        self.env.close()
+        disp.close()
         return ep_rewards
 
     def evaluate(self, n_episodes=100):

@@ -34,9 +34,8 @@ class Interface:
         """
         reward = 0
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                self.close()
             if event.type == pygame.KEYDOWN and self.tamer:
                 if event.key == pygame.K_w:
                     self.panel_color = (0, 255, 0)
@@ -79,3 +78,8 @@ class Interface:
 
         pygame.display.flip()
         self.panel_color = (0, 0, 0)
+
+    def close(self):
+        pygame.display.quit()
+        pygame.quit()
+        exit()
