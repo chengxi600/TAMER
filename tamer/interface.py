@@ -82,4 +82,3 @@ class Interface:
     def close(self):
         pygame.display.quit()
         pygame.quit()
-        exit()
