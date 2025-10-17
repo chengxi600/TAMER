@@ -72,40 +72,68 @@ class SGDFunctionApproximator:
 
 
 class EligibilityModule:
-    def __init__(self, feature_dim, trace_decay, trace_scaling, trace_accum):
+    def __init__(self, feature_dim, n_actions, trace_decay, trace_scaling, trace_accum, control_sharing):
         self.feature_dim = feature_dim
-        self.trace = np.zeros(feature_dim)
+        self.n_actions = n_actions
         self.trace_decay = trace_decay
         self.trace_scaling = trace_scaling
         self.trace_accum = trace_accum
+        self.control_sharing = control_sharing
+        self.trace = np.zeros(feature_dim)
 
-    def compute_beta(self, feature_vector):
+        if not control_sharing:
+            self.action_traces = np.zeros((n_actions, feature_dim))
+
+    def compute_beta(self, feature_vector, action=None):
         """
-            Get beta for the current state. Beta is a function of a
+            Get beta for the current state-action. Beta is a function of a
             constant scaling factor, eligibility module, and feature vector.
         """
+        if not self.control_sharing and action is None:
+            raise ValueError(
+                "Action must be provided for action-biasing beta computation.")
+
+        trace = self.trace if self.control_sharing else self.action_traces[action]
+
         norm = np.linalg.norm(feature_vector, ord=1)
-        dot_product = np.dot(self.trace, feature_vector)
+        dot_product = np.dot(trace, feature_vector)
 
         return self.trace_scaling * dot_product / norm
 
-    def update_trace(self, feature_vector):
+    def update_trace(self, feature_vector, action=None):
         """
             updates the eligibility module, where each trace caps at 1.
             e_i := min(1, e_i + (f_ni * a)) for all i in eligibility trace
         """
-        self.trace = np.minimum(
-            1, self.trace + feature_vector * self.trace_accum)
+        if not self.control_sharing and action is None:
+            raise ValueError(
+                "Action must be provided for action-biasing trace update.")
 
-    def decay_trace(self):
-        """decays the eligibility trace
+        if self.control_sharing:
+            self.trace = np.minimum(
+                1, self.trace + feature_vector * self.trace_accum)
+        else:
+            self.action_traces[action] = np.minimum(
+                1, self.action_traces[action] + feature_vector * self.trace_accum)
+
+    def decay_trace(self, action=None):
+        """ decays the eligibility trace. If given action, decays trace for all other
+            traces except given action
         """
-        self.trace = self.trace * self.trace_decay
+        if self.control_sharing:
+            self.trace = self.trace * self.trace_decay
+        elif action is None:
+            self.action_traces *= self.trace_decay
+        else:
+            indices = [i for i in range(self.n_actions) if i != action]
+            self.action_traces[indices] *= self.trace_decay
 
     def reset_trace(self):
         """Resets eligibility trace
         """
         self.trace = np.zeros(self.feature_dim)
+        if not self.control_sharing:
+            self.action_traces = np.zeros((self.n_actions, self.feature_dim))
 
 
 class TamerRL:
@@ -159,7 +187,7 @@ class TamerRL:
         out_dim = sum(
             t[1].n_components for t in self.Q.featurizer.transformer_list)
         self.trace_module = EligibilityModule(
-            out_dim, trace_decay, trace_scaling, trace_accum)
+            out_dim, env.action_space.n, trace_decay, trace_scaling, trace_accum, control_sharing)
 
         # hyperparameters
         self.discount_factor = discount_factor
@@ -182,25 +210,33 @@ class TamerRL:
 
     def act(self, state):
         """ Epsilon-greedy Policy """
-        random_action = np.random.randint(0, self.env.action_space.n)
-        beta = self.trace_module.compute_beta(self.Q.featurize_state(state))
+        n_actions = self.env.action_space.n
+        feature_vector = self.Q.featurize_state(state)
         h_preds = np.array(self.H.predict(state))
         q_preds = np.array(self.Q.predict(state))
-        biased_q_preds = q_preds + beta * h_preds
 
         # Exploration
         if np.random.random() < self.epsilon:
-            return random_action
+            print("exploration")
+            return np.random.randint(n_actions)
 
         # Exploitation
         if self.control_sharing:
-            if np.random.random() < min(1, beta):
+            beta = self.trace_module.compute_beta(feature_vector)
+            if np.random.rand() < min(1, beta):
+                print("control share H")
                 return np.argmax(h_preds)
             else:
+                print("control share Q")
                 return np.argmax(q_preds)
 
-        # action biasing
-        return np.argmax(biased_q_preds)
+        else:
+            # Action-biasing: compute beta per action
+            print("action biasing")
+            betas = np.array([self.trace_module.compute_beta(feature_vector, a)
+                              for a in range(n_actions)])
+            biased_q_preds = q_preds + betas * h_preds
+            return np.argmax(biased_q_preds)
 
     def _train_episode(self, episode_index, disp: Interface):
         print(f'Episode: {episode_index + 1}')
@@ -230,7 +266,7 @@ class TamerRL:
             # Collect human reward and update H
             human_reward = 0
             now = time.time()
-            while time.time() < now + self.ts_len and human_reward != 0:
+            while time.time() < now + self.ts_len:
                 frame = None
                 time.sleep(0.01)  # save the CPU
                 human_reward = disp.get_scalar_feedback()
@@ -240,9 +276,14 @@ class TamerRL:
                 self.logger.log_tamer_step(
                     episode_index, ep_start_time, feedback_ts, human_reward, reward)
                 self.H.update(state, action, human_reward)
+
+                # update trace for state-action and decay for all traces except action
                 self.trace_module.update_trace(
-                    self.Q.featurize_state(state))
-            else:
+                    self.Q.featurize_state(state), action)
+                self.trace_module.decay_trace(action)
+
+            # if no feedback signal, then decay all traces
+            if human_reward == 0:
                 self.trace_module.decay_trace()
 
             tot_reward += reward
@@ -268,6 +309,7 @@ class TamerRL:
         self.env.reset()
         disp = Interface(action_map=self.action_map,
                          env_frame_shape=self.env.render().shape)
+        self.trace_module.reset_trace()
         for i in range(self.num_episodes):
             ep_start_time, ep_end_time, total_reward = self._train_episode(
                 i, disp)
