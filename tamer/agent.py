@@ -17,7 +17,6 @@ from sklearn.linear_model import SGDRegressor
 from .interface import Interface
 from .logger import Logger
 
-MOUNTAINCAR_ACTION_MAP = {0: 'left', 1: 'none', 2: 'right'}
 MODELS_DIR = Path(__file__).parent.joinpath('saved_models')
 LOGS_DIR = Path(__file__).parent.joinpath('logs')
 
@@ -72,45 +71,99 @@ class SGDFunctionApproximator:
         return featurized[0]
 
 
-class Tamer:
+class EligibilityModule:
+    def __init__(self, feature_dim, trace_decay, trace_scaling, trace_accum):
+        self.feature_dim = feature_dim
+        self.trace = np.zeros(feature_dim)
+        self.trace_decay = trace_decay
+        self.trace_scaling = trace_scaling
+        self.trace_accum = trace_accum
+
+    def compute_beta(self, feature_vector):
+        """
+            Get beta for the current state. Beta is a function of a
+            constant scaling factor, eligibility module, and feature vector.
+        """
+        norm = np.linalg.norm(feature_vector, ord=1)
+        dot_product = np.dot(self.trace, feature_vector)
+
+        return self.trace_scaling * dot_product / norm
+
+    def update_trace(self, feature_vector):
+        """
+            updates the eligibility module, where each trace caps at 1.
+            e_i := min(1, e_i + (f_ni * a)) for all i in eligibility trace
+        """
+        self.trace = np.minimum(
+            1, self.trace + feature_vector * self.trace_accum)
+
+    def decay_trace(self):
+        """decays the eligibility trace
+        """
+        self.trace = self.trace * self.trace_decay
+
+    def reset_trace(self):
+        """Resets eligibility trace
+        """
+        self.trace = np.zeros(self.feature_dim)
+
+
+class TamerRL:
     """
-    QLearning Agent adapted to TAMER using steps from:
-    http://www.cs.utexas.edu/users/bradknox/kcap09/Knox_and_Stone,_K-CAP_2009.html
+    TAMER + RL Agent adapted from
+    https://bradknox.net/public/papers/aamas12-knox.pdf
     """
 
     def __init__(
         self,
         env,
+        action_map,
         num_episodes,
         max_steps,  # max timesteps for training
-        discount_factor=1,  # only affects Q-learning
-        epsilon=0,  # only affects Q-learning
+        control_sharing,  # True for control sharing improvement, False for action biasing
+        discount_factor=1,  # discount factor for Q-learning
+        trace_decay=0.99,  # decay factor for eligibility trace
+        trace_scaling=1,  # scaling factor to calculate beta
+        trace_accum=1,  # accumulation speed for eligibility trace
+        epsilon=0,  # exploration for action selection
         min_eps=0,  # minimum value for epsilon after annealing
-        tame=True,  # set to false for normal Q-learning
         ts_len=0.2,  # length of timestep for training TAMER
-        output_dir=LOGS_DIR,
-        model_file_to_load=None  # filename of pretrained model
+        logs_dir=LOGS_DIR,  # output directory for logs
+        models_dir=MODELS_DIR,  # output directory for models
+        q_model_to_load=None,  # filename of pretrained Q model
+        h_model_to_load=None  # filename of pretrained H model
     ):
-        self.tame = tame
         self.ts_len = ts_len
         self.env = env
         self.uuid = uuid.uuid4()
-        self.output_dir = output_dir
+        self.logs_dir = logs_dir
+        self.models_dir = models_dir
         self.max_steps = max_steps
+        self.action_map = action_map
+        self.control_sharing = control_sharing
 
         # init model
-        if model_file_to_load is not None:
-            print(f'Loaded pretrained model: {model_file_to_load}')
-            self.load_model(filename=model_file_to_load)
+        if q_model_to_load is not None:
+            print(f'Loaded pretrained Q model: {q_model_to_load}')
+            self.load_model(filename=q_model_to_load)
         else:
-            if tame:
-                self.H = SGDFunctionApproximator(env)  # init H function
-            else:  # optionally run as standard Q Learning
-                self.Q = SGDFunctionApproximator(env)  # init Q function
+            self.Q = SGDFunctionApproximator(env)  # init Q function
+
+        if h_model_to_load is not None:
+            print(f'Loaded pretrained H model: {h_model_to_load}')
+            self.load_model(filename=h_model_to_load)
+        else:
+            self.H = SGDFunctionApproximator(env)  # init Q function
+
+        # init eligibility module
+        out_dim = sum(
+            t[1].n_components for t in self.Q.featurizer.transformer_list)
+        self.trace_module = EligibilityModule(
+            out_dim, trace_decay, trace_scaling, trace_accum)
 
         # hyperparameters
         self.discount_factor = discount_factor
-        self.epsilon = epsilon if not tame else 0
+        self.epsilon = epsilon
         self.num_episodes = num_episodes
         self.min_eps = min_eps
 
@@ -119,22 +172,35 @@ class Tamer:
 
         # tamer log path
         tamer_log_path = os.path.join(
-            self.output_dir, "tamer", f'{self.uuid}.csv')
+            self.logs_dir, "tamer", f'{self.uuid}.csv')
         # episode log path
         episode_log_path = os.path.join(
-            self.output_dir, "episode", f'{self.uuid}.csv')
+            self.logs_dir, "episode", f'{self.uuid}.csv')
 
         # Logger
         self.logger = Logger(episode_log_path, tamer_log_path)
 
     def act(self, state):
         """ Epsilon-greedy Policy """
-        if np.random.random() < 1 - self.epsilon:
-            preds = self.H.predict(
-                state) if self.tame else self.Q.predict(state)
-            return np.argmax(preds)
-        else:
-            return np.random.randint(0, self.env.action_space.n)
+        random_action = np.random.randint(0, self.env.action_space.n)
+        beta = self.trace_module.compute_beta(self.Q.featurize_state(state))
+        h_preds = np.array(self.H.predict(state))
+        q_preds = np.array(self.Q.predict(state))
+        biased_q_preds = q_preds + beta * h_preds
+
+        # Exploration
+        if np.random.random() < self.epsilon:
+            return random_action
+
+        # Exploitation
+        if self.control_sharing:
+            if np.random.random() < min(1, beta):
+                return np.argmax(h_preds)
+            else:
+                return np.argmax(q_preds)
+
+        # action biasing
+        return np.argmax(biased_q_preds)
 
     def _train_episode(self, episode_index, disp: Interface):
         print(f'Episode: {episode_index + 1}')
@@ -152,29 +218,32 @@ class Tamer:
             next_state, reward, done, truncated, info = self.env.step(
                 action)
 
-            if not self.tame:
-                if done and next_state[0] >= 0.5:
-                    td_target = reward
-                else:
-                    td_target = reward + self.discount_factor * np.max(
-                        self.Q.predict(next_state)
-                    )
-                self.Q.update(state, action, td_target)
+            # Update Q
+            if done and next_state[0] >= 0.5:
+                td_target = reward
             else:
-                pass
-                now = time.time()
-                while time.time() < now + self.ts_len:
-                    frame = None
+                td_target = reward + self.discount_factor * np.max(
+                    self.Q.predict(next_state)
+                )
+            self.Q.update(state, action, td_target)
 
-                    time.sleep(0.01)  # save the CPU
+            # Collect human reward and update H
+            human_reward = 0
+            now = time.time()
+            while time.time() < now + self.ts_len and human_reward != 0:
+                frame = None
+                time.sleep(0.01)  # save the CPU
+                human_reward = disp.get_scalar_feedback()
+                feedback_ts = dt.datetime.now().time()
 
-                    human_reward = disp.get_scalar_feedback()
-                    feedback_ts = dt.datetime.now().time()
-                    if human_reward != 0:
-                        self.logger.log_tamer_step(
-                            episode_index, ep_start_time, feedback_ts, human_reward, reward)
-                        self.H.update(state, action, human_reward)
-                        break
+            if human_reward != 0:
+                self.logger.log_tamer_step(
+                    episode_index, ep_start_time, feedback_ts, human_reward, reward)
+                self.H.update(state, action, human_reward)
+                self.trace_module.update_trace(
+                    self.Q.featurize_state(state))
+            else:
+                self.trace_module.decay_trace()
 
             tot_reward += reward
             if done or ts >= self.max_steps-1:
@@ -197,8 +266,8 @@ class Tamer:
             model_file_to_save: save Q or H model to this filename
         """
         self.env.reset()
-        disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
-                         env_frame_shape=self.env.render().shape, tamer=self.tame)
+        disp = Interface(action_map=self.action_map,
+                         env_frame_shape=self.env.render().shape)
         for i in range(self.num_episodes):
             ep_start_time, ep_end_time, total_reward = self._train_episode(
                 i, disp)
@@ -212,8 +281,10 @@ class Tamer:
         print('\nCleaning up...')
         disp.close()
         if model_file_to_save is not None:
-            print(f'\nSaving Model to {model_file_to_save}')
-            self.save_model(filename=model_file_to_save)
+            print(f'\nSaving Q Model to q_{model_file_to_save}')
+            self.save_model(filename=f'q_{model_file_to_save}', model=self.Q)
+            print(f'\nSaving H Model to h_{model_file_to_save}')
+            self.save_model(filename=f'h_{model_file_to_save}', model=self.H)
 
     def play(self, n_episodes=1, render=False, save_gif=False, gif_name="agent.gif"):
         """
@@ -229,7 +300,7 @@ class Tamer:
         frames = []
         self.env.reset()
         if render:
-            disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
+            disp = Interface(action_map=self.action_map,
                              env_frame_shape=self.env.render().shape, tamer=False)
         for i in range(n_episodes):
             state, _ = self.env.reset()
@@ -266,27 +337,24 @@ class Tamer:
         )
         return avg_reward
 
-    def save_model(self, filename):
+    def save_model(self, filename, model):
         """
-        Save H or Q model to models dir
+        Saves a model to models dir
         Args:
             filename: name of pickled file
         """
-        model = self.H if self.tame else self.Q
         filename = filename + '.p' if not filename.endswith('.p') else filename
-        with open(MODELS_DIR.joinpath(filename), 'wb') as f:
+        with open(self.models_dir.joinpath(filename), 'wb') as f:
             pickle.dump(model, f)
 
     def load_model(self, filename):
         """
-        Load H or Q model from models dir
+        Load a model from models dir
         Args:
             filename: name of pickled file
         """
         filename = filename + '.p' if not filename.endswith('.p') else filename
-        with open(MODELS_DIR.joinpath(filename), 'rb') as f:
+        with open(self.models_dir.joinpath(filename), 'rb') as f:
             model = pickle.load(f)
-        if self.tame:
-            self.H = model
-        else:
-            self.Q = model
+
+        return model

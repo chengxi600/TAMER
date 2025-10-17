@@ -4,7 +4,7 @@ from csv import DictWriter
 class Logger:
     def __init__(self, episode_log_path, tamer_log_path):
         self.episode_log_path = episode_log_path
-        self.tamer_log_path = tamer_log_path
+        self.step_log_path = tamer_log_path
 
         self.episode_log_columns = [
             'Episode',
