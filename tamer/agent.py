@@ -18,6 +18,7 @@ from .interface import Interface
 from .logger import Logger
 
 MOUNTAINCAR_ACTION_MAP = {0: 'left', 1: 'none', 2: 'right'}
+CARTPOLE_ACTION_MAP = {0: 'left', 1: 'right'}
 MODELS_DIR = Path(__file__).parent.joinpath('saved_models')
 LOGS_DIR = Path(__file__).parent.joinpath('logs')
 
@@ -197,7 +198,7 @@ class Tamer:
             model_file_to_save: save Q or H model to this filename
         """
         self.env.reset()
-        disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
+        disp = Interface(action_map=CARTPOLE_ACTION_MAP,
                          env_frame_shape=self.env.render().shape, tamer=self.tame)
         for i in range(self.num_episodes):
             ep_start_time, ep_end_time, total_reward = self._train_episode(
@@ -229,7 +230,7 @@ class Tamer:
         frames = []
         self.env.reset()
         if render:
-            disp = Interface(action_map=MOUNTAINCAR_ACTION_MAP,
+            disp = Interface(action_map=CARTPOLE_ACTION_MAP,
                              env_frame_shape=self.env.render().shape, tamer=False)
         for i in range(n_episodes):
             state, _ = self.env.reset()
