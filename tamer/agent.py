@@ -70,8 +70,8 @@ class SGDFunctionApproximator:
         """
         scaled = self.scaler.transform([state])
         featurized = self.featurizer.transform(scaled)
-        features = (featurized[0] + 1.0) / 2.0
-        return features
+        # features = (featurized[0] + 1.0) / 2.0
+        return featurized[0]
 
 
 class EligibilityModule:
