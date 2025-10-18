@@ -176,13 +176,13 @@ class TamerRL:
         # init model
         if q_model_to_load is not None:
             print(f'Loaded pretrained Q model: {q_model_to_load}')
-            self.load_model(filename=q_model_to_load)
+            self.Q = self.load_model(filename=q_model_to_load)
         else:
             self.Q = SGDFunctionApproximator(env)  # init Q function
 
         if h_model_to_load is not None:
             print(f'Loaded pretrained H model: {h_model_to_load}')
-            self.load_model(filename=h_model_to_load)
+            self.H = self.load_model(filename=h_model_to_load)
         else:
             self.H = SGDFunctionApproximator(env)  # init Q function
 
@@ -342,7 +342,7 @@ class TamerRL:
         self.env.reset()
         if render:
             disp = Interface(action_map=self.action_map,
-                             env_frame_shape=self.env.render().shape, tamer=False)
+                             env_frame_shape=self.env.render().shape)
         for i in range(n_episodes):
             state, _ = self.env.reset()
             done = False

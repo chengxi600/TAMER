@@ -17,8 +17,8 @@ mountain_car_params = {
 cartpole_params = {
     "action_map": {0: 'left', 1: 'right'},
     "max_steps": 300,
-    "discount_factor": 0.95,
-    "epsilon": 0,
+    "discount_factor": 0.99,
+    "epsilon": 1,
     "min_eps": 0,
     "trace_decay": 0.9,
     "trace_scaling": None,

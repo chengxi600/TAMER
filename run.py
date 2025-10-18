@@ -57,9 +57,9 @@ async def main():
 
     agent = TamerRL(**cp_agent_config)
 
-    await agent.train(model_file_to_save="500ep_cartpole_disc0.95.p", eval=True, eval_interval=50)
-    # agent.play(n_episodes=3, render=True),
-    # save_gif = True, gif_name = "500_eps_q_learning_1.gif")
+    # await agent.train(model_file_to_save="500ep_cartpole_disc0.99.p", eval=True, eval_interval=50)
+    agent.play(n_episodes=3, render=True, save_gif=True,
+               gif_name="500ep_cartpole_disc0.99.gif")
     # agent.evaluate(n_episodes=30)
 
 
