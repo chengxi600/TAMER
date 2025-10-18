@@ -8,56 +8,56 @@ import gymnasium as gym
 
 from tamer.agent import TamerRL
 from pathlib import Path
+from configs import HYPERPARAMS
 
 MODELS_DIR = Path(__file__).parent.joinpath('tamer/saved_models')
 LOGS_DIR = Path(__file__).parent.joinpath('tamer/logs')
 
 
 async def main():
-    MOUNTAINCAR_ACTION_MAP = {0: 'left', 1: 'none', 2: 'right'}
-    env = gym.make("MountainCar-v0", render_mode="rgb_array")
+    # Experiment params
+    num_episodes = 500
+    control_sharing = False
+    tamer_timestep_length = 0
 
-    # CARTPOLE_ACTION_MAP = {0: 'left', 1: 'right'}
-    # env = gym.make("CartPole-v1", render_mode="rgb_array")
+    # Domain specific params
+    # MountainCar
+    mc_env = gym.make("MountainCar-v0", render_mode="rgb_array")
+    mc_params = HYPERPARAMS["MountainCar-v0"]
+    mc_params["trace_scaling"] = 2 if control_sharing else 100
 
-    # hyperparameters
-    max_steps = 300
-    discount_factor = 0.99
-    epsilon = 0  # vanilla Q learning actually works well with no random exploration
-    min_eps = 0
-    num_episodes = 30
-    control_sharing = True  # set false for action biasing
+    mc_agent_config = {
+        **mc_params,
+        "env": mc_env,
+        "num_episodes": num_episodes,
+        "control_sharing": control_sharing,
+        "ts_len": tamer_timestep_length,
+        "logs_dir": LOGS_DIR,
+        "models_dir": MODELS_DIR,
+        "q_model_to_load": None,
+        "h_model_to_load": None
+    }
 
-    # set a timestep for training TAMER
-    # the more time per step, the easier for the human
-    # but the longer it takes to train (in real time)
-    # 0.2 seconds is fast but doable
-    tamer_training_timestep = 1
+    # CartPole
+    cp_env = gym.make("CartPole-v1", render_mode="rgb_array")
+    cp_params = HYPERPARAMS["CartPole-v1"]
+    cp_params["trace_scaling"] = 1 if control_sharing else 200
 
-    # hyperparameters for traces
-    trace_decay = 0.99
-    # paper uses 100, 200 for action biasing mountain car, cartpole and 2,1 for control sharing
-    trace_scaling = 2
-    trace_accum = 0.2
+    cp_agent_config = {
+        **cp_params,
+        "env": cp_env,
+        "num_episodes": num_episodes,
+        "control_sharing": control_sharing,
+        "ts_len": tamer_timestep_length,
+        "logs_dir": LOGS_DIR,
+        "models_dir": MODELS_DIR,
+        "q_model_to_load": None,
+        "h_model_to_load": None
+    }
 
-    agent = TamerRL(env=env,
-                    action_map=MOUNTAINCAR_ACTION_MAP,
-                    num_episodes=num_episodes,
-                    max_steps=max_steps,
-                    discount_factor=discount_factor,
-                    trace_decay=trace_decay,
-                    trace_accum=trace_accum,
-                    trace_scaling=trace_scaling,
-                    epsilon=epsilon,
-                    min_eps=min_eps,
-                    control_sharing=control_sharing,
-                    ts_len=tamer_training_timestep,
-                    logs_dir=LOGS_DIR,
-                    models_dir=MODELS_DIR,
-                    q_model_to_load=None,
-                    h_model_to_load=None)
+    agent = TamerRL(**mc_agent_config)
 
-    await agent.train(model_file_to_save=None, eval=False, eval_interval=50)
+    await agent.train(model_file_to_save="16ep_mc.p", eval=False, eval_interval=50)
     # agent.play(n_episodes=3, render=True),
     # save_gif = True, gif_name = "500_eps_q_learning_1.gif")
     # agent.evaluate(n_episodes=30)

@@ -65,10 +65,13 @@ class SGDFunctionApproximator:
         self.models[action].partial_fit([features], [td_target])
 
     def featurize_state(self, state):
-        """ Returns the featurized representation for a state. """
+        """ Returns the featurized representation for a state. Since RBF centers data around
+            [-1,1], we shift the values to be [0,1].
+        """
         scaled = self.scaler.transform([state])
         featurized = self.featurizer.transform(scaled)
-        return featurized[0]
+        features = (featurized[0] + 1.0) / 2.0
+        return features
 
 
 class EligibilityModule:
@@ -217,22 +220,18 @@ class TamerRL:
 
         # Exploration
         if np.random.random() < self.epsilon:
-            print("exploration")
             return np.random.randint(n_actions)
 
         # Exploitation
         if self.control_sharing:
             beta = self.trace_module.compute_beta(feature_vector)
             if np.random.rand() < min(1, beta):
-                print("control share H")
                 return np.argmax(h_preds)
             else:
-                print("control share Q")
                 return np.argmax(q_preds)
 
         else:
             # Action-biasing: compute beta per action
-            print("action biasing")
             betas = np.array([self.trace_module.compute_beta(feature_vector, a)
                               for a in range(n_actions)])
             biased_q_preds = q_preds + betas * h_preds
