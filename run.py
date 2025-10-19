@@ -16,7 +16,7 @@ LOGS_DIR = Path(__file__).parent.joinpath('tamer/logs')
 
 async def main():
     # Experiment params
-    num_episodes = 500
+    num_episodes = 7000
     control_sharing = False
     tamer_timestep_length = 0
 
@@ -55,11 +55,27 @@ async def main():
         "h_model_to_load": None
     }
 
-    agent = TamerRL(**cp_agent_config)
+    # Lunar Lander
+    ll_env = gym.make("LunarLander-v3", continuous=False, gravity=-10.0,
+                      enable_wind=False, wind_power=15.0, turbulence_power=1.5, render_mode="rgb_array")
+    ll_params = HYPERPARAMS["LunarLander-v3"]
+    ll_agent_config = {
+        **ll_params,
+        "env": ll_env,
+        "num_episodes": num_episodes,
+        "control_sharing": control_sharing,
+        "ts_len": tamer_timestep_length,
+        "logs_dir": LOGS_DIR,
+        "models_dir": MODELS_DIR,
+        "q_model_to_load": None,
+        "h_model_to_load": None
+    }
 
-    # await agent.train(model_file_to_save="500ep_cartpole_disc0.99.p", eval=True, eval_interval=50)
-    agent.play(n_episodes=3, render=True, save_gif=True,
-               gif_name="500ep_cartpole_disc0.99.gif")
+    agent = TamerRL(**ll_agent_config)
+
+    await agent.train(model_file_to_save="500ep_lunar.p", eval=False, eval_interval=50)
+    # agent.play(n_episodes=3, render=True, save_gif=True,
+    #            gif_name="500ep_cartpole_disc0.99.gif")
     # agent.evaluate(n_episodes=30)
 
 

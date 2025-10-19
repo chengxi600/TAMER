@@ -25,7 +25,19 @@ cartpole_params = {
     "trace_accum": 0.2,
 }
 
+lunar_params = {
+    "action_map": {0: 'none', 1: 'left engine', 2: 'main engine', 3: 'right engine'},
+    "max_steps": 1000,
+    "discount_factor": 0.99,
+    "epsilon": 1,
+    "min_eps": 0,
+    "trace_decay": 0.9,
+    "trace_scaling": 1,
+    "trace_accum": 0.2,
+}
+
 HYPERPARAMS = {
     "MountainCar-v0": mountain_car_params,
     "CartPole-v1": cartpole_params,
+    "LunarLander-v3": lunar_params,
 }
