@@ -5,18 +5,34 @@ When training, use 'W' and 'A' keys for positive and negative rewards
 
 import asyncio
 import gymnasium as gym
+import numpy as np
 
 from tamer.agent import TamerRL
 from pathlib import Path
 from configs import HYPERPARAMS
+from gymnasium import spaces
+
 
 MODELS_DIR = Path(__file__).parent.joinpath('tamer/saved_models')
 LOGS_DIR = Path(__file__).parent.joinpath('tamer/logs')
 
 
+class ReshapeToBox(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Old obs space is Discrete(n)
+        n = env.observation_space.n
+        # New obs space is a Box of shape (1,)
+        self.observation_space = spaces.Box(
+            low=0, high=n-1, shape=(1,), dtype=np.int32)
+
+    def observation(self, obs):
+        return np.array([obs], dtype=np.int32)
+
+
 async def main():
     # Experiment params
-    num_episodes = 7000
+    num_episodes = 5000
     control_sharing = False
     tamer_timestep_length = 1
 
@@ -71,9 +87,28 @@ async def main():
         "h_model_to_load": None
     }
 
-    agent = TamerRL(**ll_agent_config)
+    # Taxi
+    taxi_env = gym.make("Taxi-v3", render_mode="rgb_array")
+    taxi_env = ReshapeToBox(taxi_env)
+    taxi_params = HYPERPARAMS["Taxi-v3"]
 
-    await agent.train(model_file_to_save="500ep_lunar.p", eval=False, eval_interval=50)
+    # print(taxi_env.observation_space.sample())
+
+    taxi_agent_config = {
+        **taxi_params,
+        "env": taxi_env,
+        "num_episodes": num_episodes,
+        "control_sharing": control_sharing,
+        "ts_len": tamer_timestep_length,
+        "logs_dir": LOGS_DIR,
+        "models_dir": MODELS_DIR,
+        "q_model_to_load": None,
+        "h_model_to_load": None
+    }
+
+    agent = TamerRL(**taxi_agent_config)
+
+    await agent.train(model_file_to_save="5000eps_taxi.p", eval=True, eval_interval=500)
     # agent.play(n_episodes=3, render=True, save_gif=True,
     #            gif_name="500ep_cartpole_disc0.99.gif")
     # agent.evaluate(n_episodes=30)

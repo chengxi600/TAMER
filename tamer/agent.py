@@ -243,15 +243,16 @@ class TamerRL:
         state, _ = self.env.reset()
         ep_start_time = dt.datetime.now().time()
         for ts in count():
-            frame = self.env.render()
 
             # Determine next action
             action = self.act(state)
-            disp.render(frame, action)
 
             # Get next state and reward
             next_state, reward, done, truncated, info = self.env.step(
                 action)
+
+            frame = self.env.render()
+            disp.render(frame, action)
 
             # Update Q
             if done and next_state[0] >= 0.5:
