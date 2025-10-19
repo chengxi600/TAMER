@@ -266,24 +266,26 @@ class TamerRL:
             human_reward = 0
             now = time.time()
             while time.time() < now + self.ts_len:
-                frame = None
                 time.sleep(0.01)  # save the CPU
                 human_reward = disp.get_scalar_feedback()
                 feedback_ts = dt.datetime.now().time()
 
-            if human_reward != 0:
-                self.logger.log_tamer_step(
-                    episode_index, ep_start_time, feedback_ts, human_reward, reward)
-                self.H.update(state, action, human_reward)
+                if human_reward != 0:
+                    self.logger.log_tamer_step(
+                        episode_index, ep_start_time, feedback_ts, human_reward, reward)
+                    self.H.update(state, action, human_reward)
 
-                # update trace for state-action and decay for all traces except action
-                self.trace_module.update_trace(
-                    self.Q.featurize_state(state), action)
-                self.trace_module.decay_trace(action)
+                    # update trace for state-action and decay for all traces except action
+                    self.trace_module.update_trace(
+                        self.Q.featurize_state(state), action)
+                    self.trace_module.decay_trace(action)
+                    disp.render(frame, action)
 
             # if no feedback signal, then decay all traces
             if human_reward == 0:
                 self.trace_module.decay_trace()
+
+            disp.render(frame, action)
 
             tot_reward += reward
             if done or ts >= self.max_steps-1:

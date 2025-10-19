@@ -18,7 +18,7 @@ async def main():
     # Experiment params
     num_episodes = 7000
     control_sharing = False
-    tamer_timestep_length = 0
+    tamer_timestep_length = 1
 
     # Domain specific params
     # MountainCar
