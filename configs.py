@@ -29,7 +29,7 @@ lunar_params = {
     "action_map": {0: 'none', 1: 'left engine', 2: 'main engine', 3: 'right engine'},
     "max_steps": 1000,
     "discount_factor": 0.99,
-    "epsilon": 1,
+    "epsilon": 0,
     "min_eps": 0,
     "trace_decay": 0.9,
     "trace_scaling": 1,

@@ -6,13 +6,13 @@ import uuid
 from itertools import count
 from pathlib import Path
 from sys import stdout
-from csv import DictWriter
 import imageio
 
 import numpy as np
 from sklearn import pipeline, preprocessing
 from sklearn.kernel_approximation import RBFSampler
 from sklearn.linear_model import SGDRegressor
+from itertools import product
 
 from .interface import Interface
 from .logger import Logger
@@ -65,12 +65,10 @@ class SGDFunctionApproximator:
         self.models[action].partial_fit([features], [td_target])
 
     def featurize_state(self, state):
-        """ Returns the featurized representation for a state. Since RBF centers data around
-            [-1,1], we shift the values to be [0,1].
+        """ Returns the featurized representation for a state.
         """
         scaled = self.scaler.transform([state])
         featurized = self.featurizer.transform(scaled)
-        # features = (featurized[0] + 1.0) / 2.0
         return featurized[0]
 
 
