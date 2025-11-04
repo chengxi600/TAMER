@@ -3,7 +3,6 @@ Implementation of Deep Q Learning modified from
 https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 """
 
-from collections import deque, namedtuple
 from pathlib import Path
 import random
 import numpy as np
@@ -12,40 +11,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from itertools import count
 import torch.optim as optim
+import time
 import os
 import imageio
 import datetime as dt
 import uuid
 from logger import Logger
 from interface import Interface
+from dqn.replay import ReplayBuffer, HumanTransition, Transition
 
-
-Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
 LOGS_DIR = Path(__file__).parent.joinpath('logs')
 
 
-class ReplayBuffer:
-    def __init__(self, capacity):
-        self.memory = deque([], maxlen=capacity)
-
-    def push(self, *args):
-        """Save a transition"""
-        self.memory.append(Transition(*args))
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-
-
 class QNetwork(nn.Module):
-    def __init__(self, state_size, action_size):
+    def __init__(self, input_size, output_size):
         super(QNetwork, self).__init__()
-        self.layer1 = nn.Linear(state_size, 128)
+        self.layer1 = nn.Linear(input_size, 128)
         self.layer2 = nn.Linear(128, 128)
-        self.out_layer = nn.Linear(128, action_size)
+        self.out_layer = nn.Linear(128, output_size)
 
     def forward(self, state):
         x = self.layer1(state)
@@ -69,33 +52,72 @@ class DQNAgent:
         env,
         action_map,
         num_episodes,
+        max_steps,
         epsilon,
         min_epsilon,
+        alpha_q,
+        alpha_h,
         discount_factor,
         learning_rate,
         batch_size,
         target_update_interval,
         buffer_size,
+        ts_len,
         logs_dir=LOGS_DIR,
         q_model_to_load=None,  # filename of pretrained Q model
+        h_model_to_load=None,  # filename of pretrained H model
+        render=True,
+        tamer=False
     ):
+        """ Initializes a DQN Agent
+
+        Args:
+            env (gymnasium.Env): a gym environment
+            action_map (dict[int, str]): a dict that maps an action to the description of action
+            num_episodes (int): number of training episodes
+            max_steps (int): max steps per episode
+            epsilon (float): exploration rate
+            min_epsilon (float): minimum exploration rate (epsilon will be decayed to min_epsilon)
+            alpha_q (float): action biasing weight for Q function
+            alpha_h (float): action biasing weight for H function
+            discount_factor (float): discount factor for rewards
+            learning_rate (float): learning rate for Q and H functions
+            batch_size (int): learning batch size
+            target_update_interval (int): frequency of updating target Q network
+            buffer_size (int): buffer size for replay memory
+            ts_len (float): temporal length of a timestep (seconds)
+            logs_dir (string, optional): directory for logs. Defaults to LOGS_DIR.
+            q_model_to_load (string, optional): file to load Q model. Defaults to None.
+            h_model_to_load (string, optional): file to load H model. Defaults to None.
+            render (bool, optional): renders environment. Defaults to True.
+            tamer (bool, optional): allow human feedback. Defaults to False.
+        """
         self.env = env
         self.env.reset()
         self.num_episodes = num_episodes
-        self.learning_rate = learning_rate
-        self.discount_factor = discount_factor
+        self.max_steps = max_steps
         self.batch_size = batch_size
         self.target_update_interval = target_update_interval
         self.logs_dir = logs_dir
         self.uuid = uuid.uuid4()
-        self.disp = Interface(action_map=action_map,
-                              env_frame_shape=self.env.render().shape)
+        self.ts_len = ts_len
+        self.render = render
+        self.tamer = tamer
+        if self.render:
+            self.disp = Interface(action_map=action_map,
+                                  env_frame_shape=self.env.render().shape)
 
         self.epsilon = epsilon
         self.min_epsilon = min_epsilon
         self.epsilon_decay_step = (epsilon - min_epsilon) / num_episodes
 
+        self.learning_rate = learning_rate
+        self.discount_factor = discount_factor
+        self.alpha_q = alpha_q
+        self.alpha_h = alpha_h
+
         # initialize networks
+        # initialize Q
         self.Q = QNetwork(
             self.env.observation_space.shape[0], self.env.action_space.n)
         if q_model_to_load is not None:
@@ -106,10 +128,20 @@ class DQNAgent:
             self.env.observation_space.shape[0], self.env.action_space.n)
         self.target_Q.load_state_dict(self.Q.state_dict())
 
+        # initialize H
+        self.H = QNetwork(
+            self.env.observation_space.shape[0], self.env.action_space.n)
+        if h_model_to_load is not None:
+            self.H.load_state_dict(torch.load(
+                h_model_to_load, weights_only=True))
+
         # initialize optimizer and memory
         self.optimizer = optim.AdamW(
             self.Q.parameters(), lr=self.learning_rate, amsgrad=True)
-        self.memory = ReplayBuffer(buffer_size)
+        self.H_optimizer = optim.AdamW(
+            self.H.parameters(), lr=self.learning_rate, amsgrad=True)
+        self.memory = ReplayBuffer(buffer_size, Transition)
+        self.human_memory = ReplayBuffer(buffer_size, HumanTransition)
 
         # tamer log path
         tamer_log_path = os.path.join(
@@ -124,7 +156,10 @@ class DQNAgent:
     def act(self, state):
         if random.random() > self.epsilon:
             with torch.no_grad():
-                return self.Q(state).max(1).indices.view(1, 1)
+                q_values = self.Q(state)
+                h_values = self.H(state)
+                combined = q_values * self.alpha_q + h_values * self.alpha_h
+                return combined.max(1).indices.view(1, 1)
         else:
             return torch.tensor([[self.env.action_space.sample()]], dtype=torch.long)
 
@@ -171,7 +206,40 @@ class DQNAgent:
         torch.nn.utils.clip_grad_value_(self.Q.parameters(), 100)
         self.optimizer.step()
 
-    def train(self, model_file_to_save=None, eval=False, eval_interval=1):
+    def learn_human(self):
+        if len(self.human_memory) < self.batch_size:
+            return
+
+        transitions = self.human_memory.sample(self.batch_size)
+
+        # This converts batch-array of HumanTransitions to HumanTransitions of batch-arrays.
+        batch = HumanTransition(*zip(*transitions))
+
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        feedback_batch = torch.cat(batch.feedback)
+
+        predicted_feedback = self.H(state_batch).gather(1, action_batch)
+
+        # Compute Huber loss
+        criterion = nn.SmoothL1Loss()
+        loss = criterion(predicted_feedback,
+                         feedback_batch.unsqueeze(1))
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        # In-place gradient clipping
+        torch.nn.utils.clip_grad_value_(self.Q.parameters(), 100)
+        self.optimizer.step()
+
+    def train(
+        self,
+        q_model_file_to_save=None,
+        h_model_file_to_save=None,
+        eval=False,
+        eval_interval=1
+    ):
         """
         TAMER (or Q learning) training loop
         Args:
@@ -179,7 +247,7 @@ class DQNAgent:
         """
         self.env.reset()
         for i in range(self.num_episodes):
-            ep_start_time, ep_end_time, total_reward = self._train_episode()
+            ep_start_time, ep_end_time, total_reward = self._train_episode(i)
             print(f'Episode {i}, Reward: {total_reward}')
             self.logger.log_episode(
                 i, ep_start_time, ep_end_time, total_reward)
@@ -189,12 +257,17 @@ class DQNAgent:
                     i, "eval", "eval", avg_reward)
 
                 print('\nCleaning up...')
-        self.env.close()
-        if model_file_to_save is not None:
-            print(f'\nSaving Q Model to {model_file_to_save}')
-            self.Q.save_model(model_file_to_save)
+        if self.render:
+            self.disp.close()
+        if q_model_file_to_save is not None:
+            print(f'\nSaving Q Model to {q_model_file_to_save}')
+            self.Q.save_model(q_model_file_to_save)
 
-    def _train_episode(self):
+        if h_model_file_to_save is not None:
+            print(f'\nSaving H Model to {h_model_file_to_save}')
+            self.H.save_model(h_model_file_to_save)
+
+    def _train_episode(self, ep_idx):
         state, _ = self.env.reset()
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
         total_reward = 0
@@ -217,7 +290,22 @@ class DQNAgent:
                 next_state = torch.tensor(
                     observation, dtype=torch.float32).unsqueeze(0)
 
-            self.disp.render(self.env.render(), action.item())
+            if self.render:
+                self.disp.render(self.env.render(), action.item())
+
+            now = time.time()
+            while time.time() < now + self.ts_len:
+                time.sleep(0.01)  # save the CPU
+                feedback = self.disp.get_scalar_feedback()
+                feedback_ts = dt.datetime.now().time()
+
+                if feedback != 0:
+                    self.human_memory.push(state, action, feedback)
+                    self.logger.log_tamer_step(
+                        ep_idx, ep_start_time, feedback_ts, feedback, reward)
+
+                    if self.render:
+                        self.disp.render(self.env.render(), action.item())
 
             # Store transition in replay buffer
             self.memory.push(state, action, next_state, reward)
@@ -227,14 +315,16 @@ class DQNAgent:
 
             # Gradient descent
             self.learn()
+            self.learn_human()
 
             # Every C steps, update the target network
             if ts % self.target_update_interval == 0:
                 self.target_Q.load_state_dict(self.Q.state_dict())
 
-            # Decay epsilon
+            # Decay epsilon and alpha_h
             if self.epsilon > self.min_epsilon:
                 self.epsilon -= self.epsilon_decay_step
+            self.alpha_h *= 0.9999
 
             if done:
                 ep_end_time = dt.datetime.now().time()
@@ -275,7 +365,7 @@ class DQNAgent:
                 state = next_state
             ep_rewards.append(tot_reward)
         if render:
-            self.env.close()
+            self.disp.close()
 
         # only saves gif of the last run
         if save_gif:

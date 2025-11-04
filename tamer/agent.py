@@ -284,8 +284,6 @@ class TamerRL:
             if human_reward == 0:
                 self.trace_module.decay_trace()
 
-            disp.render(frame, action)
-
             tot_reward += reward
             if done or ts >= self.max_steps-1:
                 print(f'Reward: {tot_reward}')

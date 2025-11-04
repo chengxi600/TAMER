@@ -11,21 +11,32 @@ def main():
         env,
         action_map={0: "none", 1: "left engine",
                     2: "main engine", 3: "right engine"},
-        num_episodes=50,
-        epsilon=1,
-        min_epsilon=0.1,
+        num_episodes=20,
+        max_steps=500,
+        epsilon=0,
+        min_epsilon=0,
         discount_factor=0.99,
-        learning_rate=0.01,
-        batch_size=128,
+        learning_rate=0.001,
+        alpha_h=0,
+        alpha_q=1,
+        batch_size=64,
         target_update_interval=50,
         buffer_size=10000,
-        q_model_to_load=None)
+        ts_len=0.5,
+        q_model_to_load="dqn/saved_models/q_ll_300eps.pth",
+        h_model_to_load=None,
+        render=True,
+        tamer=True)
 
     agent.train(
-        model_file_to_save="dqn/saved_models/ll_5eps.pth",
-        eval=False,
-        eval_interval=1
+        q_model_file_to_save="dqn/saved_models/q_ll_500eps.pth",
+        h_model_file_to_save="dqn/saved_models/h_ll_500eps.pth",
+        eval=True,
+        eval_interval=50
     )
+
+    # agent.play(n_episodes=1, render=True, save_gif=True,
+    #            gif_name="ll_dqn_300eps.gif")
 
 
 if __name__ == '__main__':
