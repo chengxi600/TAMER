@@ -14,8 +14,8 @@ from sklearn.kernel_approximation import RBFSampler
 from sklearn.linear_model import SGDRegressor
 from itertools import product
 
-from .interface import Interface
-from .logger import Logger
+from interface import Interface
+from logger import Logger
 
 MODELS_DIR = Path(__file__).parent.joinpath('saved_models')
 LOGS_DIR = Path(__file__).parent.joinpath('logs')

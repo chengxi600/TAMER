@@ -9,7 +9,7 @@ import numpy as np
 
 from tamer.agent import TamerRL
 from pathlib import Path
-from configs import HYPERPARAMS
+from tamer.configs import HYPERPARAMS
 from gymnasium import spaces
 
 
@@ -19,7 +19,7 @@ LOGS_DIR = Path(__file__).parent.joinpath('tamer/logs')
 
 async def main():
     # Experiment params
-    num_episodes = 5000
+    num_episodes = 20
     control_sharing = False
     tamer_timestep_length = 0.3
 
@@ -74,9 +74,9 @@ async def main():
         "h_model_to_load": None
     }
 
-    agent = TamerRL(**mc_agent_config)
+    agent = TamerRL(**cp_agent_config)
 
-    await agent.train(model_file_to_save="5000eps_taxi.p", eval=True, eval_interval=500)
+    await agent.train(model_file_to_save="10eps_cp.p", eval=True, eval_interval=2)
     # agent.play(n_episodes=3, render=True, save_gif=True,
     #            gif_name="500ep_cartpole_disc0.99.gif")
     # agent.evaluate(n_episodes=30)
