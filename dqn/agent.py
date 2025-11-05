@@ -19,6 +19,7 @@ import uuid
 from logger import Logger
 from interface import Interface
 from dqn.replay import ReplayBuffer, HumanTransition, Transition
+from datetime import datetime
 
 LOGS_DIR = Path(__file__).parent.joinpath('logs')
 
@@ -151,7 +152,7 @@ class DQNAgent:
             self.logs_dir, "episode", f'{self.uuid}.csv')
 
         # Logger
-        self.logger = Logger(episode_log_path, tamer_log_path)
+        self.logger = Logger(episode_log_path, tamer_log_path, log_csv=True)
 
     def act(self, state):
         if random.random() > self.epsilon:
@@ -257,6 +258,11 @@ class DQNAgent:
                     i, "eval", "eval", avg_reward)
 
                 print('\nCleaning up...')
+
+        print("\nSaving logs to database...")
+        self.logger.log_experiment(name="test name", date=datetime.today().strftime(
+            '%Y-%m-%d'), algorithm="DQN-TAMER" if self.tamer else "DQN")
+
         if self.render:
             self.disp.close()
         if q_model_file_to_save is not None:

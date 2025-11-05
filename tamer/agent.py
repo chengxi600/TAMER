@@ -207,7 +207,7 @@ class TamerRL:
             self.logs_dir, "episode", f'{self.uuid}.csv')
 
         # Logger
-        self.logger = Logger(episode_log_path, tamer_log_path)
+        self.logger = Logger(episode_log_path, tamer_log_path, log_csv=True)
 
     def act(self, state):
         """ Epsilon-greedy Policy """

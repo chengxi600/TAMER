@@ -11,7 +11,7 @@ def main():
         env,
         action_map={0: "none", 1: "left engine",
                     2: "main engine", 3: "right engine"},
-        num_episodes=20,
+        num_episodes=5,
         max_steps=500,
         epsilon=0,
         min_epsilon=0,
@@ -22,11 +22,11 @@ def main():
         batch_size=64,
         target_update_interval=50,
         buffer_size=10000,
-        ts_len=0.5,
-        q_model_to_load="dqn/saved_models/q_ll_300eps.pth",
+        ts_len=0,
+        q_model_to_load=None,
         h_model_to_load=None,
-        render=True,
-        tamer=True)
+        render=False,
+        tamer=False)
 
     agent.train(
         q_model_file_to_save="dqn/saved_models/q_ll_500eps.pth",
