@@ -271,7 +271,7 @@ class TamerRL:
 
                 if human_reward != 0:
                     self.logger.log_tamer_step(
-                        episode_index, ep_start_time, feedback_ts, human_reward, reward)
+                        episode_index, feedback_ts, human_reward, reward)
                     self.H.update(state, action, human_reward)
 
                     # update trace for state-action and decay for all traces except action

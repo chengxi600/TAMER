@@ -236,6 +236,7 @@ class DQNAgent:
 
     def train(
         self,
+        name="Experiment",
         q_model_file_to_save=None,
         h_model_file_to_save=None,
         eval=False,
@@ -258,6 +259,7 @@ class DQNAgent:
                     i, "eval", "eval", avg_reward)
 
                 print('\nCleaning up...')
+        self.logger.csv_logger.close()
 
         print("\nSaving logs to database...")
         self.logger.log_experiment(name="test name", date=datetime.today().strftime(
@@ -308,7 +310,7 @@ class DQNAgent:
                 if feedback != 0:
                     self.human_memory.push(state, action, feedback)
                     self.logger.log_tamer_step(
-                        ep_idx, ep_start_time, feedback_ts, feedback, reward)
+                        ep_idx, feedback_ts, feedback, reward)
 
                     if self.render:
                         self.disp.render(self.env.render(), action.item())
@@ -338,13 +340,13 @@ class DQNAgent:
 
     def play(self, n_episodes=1, render=False, save_gif=False, gif_name="agent.gif"):
         """
-            Run episodes with trained agent
-            Args:
-                n_episodes: number of episodes
-                render: optionally render episodes
+          Run episodes with trained agent
+          Args:
+              n_episodes: number of episodes
+              render: optionally render episodes
 
-            Returns: list of cumulative episode rewards
-            """
+          Returns: list of cumulative episode rewards
+        """
         self.epsilon = 0
         ep_rewards = []
         frames = []

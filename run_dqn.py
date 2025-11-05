@@ -11,7 +11,7 @@ def main():
         env,
         action_map={0: "none", 1: "left engine",
                     2: "main engine", 3: "right engine"},
-        num_episodes=5,
+        num_episodes=15,
         max_steps=500,
         epsilon=0,
         min_epsilon=0,
@@ -29,9 +29,10 @@ def main():
         tamer=False)
 
     agent.train(
-        q_model_file_to_save="dqn/saved_models/q_ll_500eps.pth",
-        h_model_file_to_save="dqn/saved_models/h_ll_500eps.pth",
-        eval=True,
+        name="LunarLander DQN 15 episodes",
+        q_model_file_to_save=None,
+        h_model_file_to_save=None,
+        eval=False,
         eval_interval=50
     )
 
