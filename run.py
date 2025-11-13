@@ -19,9 +19,9 @@ LOGS_DIR = Path(__file__).parent.joinpath('tamer/logs')
 
 async def main():
     # Experiment params
-    num_episodes = 20
+    num_episodes = 500
     control_sharing = False
-    tamer_timestep_length = 0.3
+    tamer_timestep_length = 0
 
     # Domain specific params
     # MountainCar
@@ -76,7 +76,7 @@ async def main():
 
     agent = TamerRL(**cp_agent_config)
 
-    await agent.train(model_file_to_save="10eps_cp.p", eval=True, eval_interval=2)
+    await agent.train(model_file_to_save="500eps_cp.p", eval=True, eval_interval=50)
     # agent.play(n_episodes=3, render=True, save_gif=True,
     #            gif_name="500ep_cartpole_disc0.99.gif")
     # agent.evaluate(n_episodes=30)

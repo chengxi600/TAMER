@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from datetime import time
 from collections import defaultdict
+import imageio
 
 
 class TimeStepLog(BaseModel):
@@ -34,6 +35,7 @@ class ExperimentLog(BaseModel):
     name: str
     date: str
     algorithm: str
+    gif_url: str
     episode_logs: List[EpisodeLog]
 
 
@@ -60,6 +62,7 @@ class Logger:
         # mapping from episode idx to an EpisodeLog
         self.episodes: dict[int, dict] = defaultdict(init_episode)
         self.log_csv = log_csv
+        self.gif_url = ""
 
         if log_csv:
             self.csv_logger = CSVLogger(episode_log_path, tamer_log_path)
@@ -104,6 +107,20 @@ class Logger:
             self.csv_logger.log_episode_csv(episode_idx, ep_start_ts,
                                             ep_end_ts, total_reward)
 
+    def log_gif(self, filename):
+        """Logs a gif of the environment given file name
+
+        Args:
+            filename : gif file name to upload
+        """
+        url = f'https://hfrl-dashboard.vercel.app/api/upload?filename={filename}'
+
+        with open(filename, "rb") as f:
+            resp = requests.post(
+                url, data=f.read())
+            if resp.status_code == 201:
+                self.gif_url = resp.json()["blob"]["url"]
+
     def log_experiment(
         self,
         name,
@@ -117,7 +134,7 @@ class Logger:
             date (str): date of experiment
             algorithm (str): algorithm used for this experiment. 
         """
-        url = 'https://hfrl-dashboard.vercel.app/api/log'
+        url = 'https://hfrl-dashboard.vercel.app/api/logs'
 
         episode_logs = [
             EpisodeLog(**ep_dict) for ep_dict in self.episodes.values()
@@ -126,9 +143,11 @@ class Logger:
             name=name,
             date=date,
             algorithm=algorithm,
+            gif_url=self.gif_url,
             episode_logs=episode_logs
         )
         x = requests.post(url, json=experiment_log.model_dump(mode='json'))
+        print(x)
 
 
 class CSVLogger:

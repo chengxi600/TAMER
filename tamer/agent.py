@@ -209,12 +209,15 @@ class TamerRL:
         # Logger
         self.logger = Logger(episode_log_path, tamer_log_path, log_csv=True)
 
-    def act(self, state):
+    def act(self, state, eval=False):
         """ Epsilon-greedy Policy """
         n_actions = self.env.action_space.n
         feature_vector = self.Q.featurize_state(state)
         h_preds = np.array(self.H.predict(state))
         q_preds = np.array(self.Q.predict(state))
+
+        if eval:
+            return np.argmax(q_preds)
 
         # Exploration
         if np.random.random() < self.epsilon:
@@ -347,7 +350,7 @@ class TamerRL:
             done = False
             tot_reward = 0
             for i in count():
-                action = self.act(state)
+                action = self.act(state, eval=True)
                 next_state, reward, done, truncated, info = self.env.step(
                     action)
                 tot_reward += reward

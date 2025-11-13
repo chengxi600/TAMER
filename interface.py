@@ -69,7 +69,7 @@ class Interface:
         text = self.font.render(
             self.action_map[action], True, (255, 255, 255))
         text_rect = text.get_rect(
-            center=(env_frame.shape[1] // 2, env_height + 50))
+            center=(env_width // 2, env_height + 50))
         self.screen.blit(text, text_rect)
 
         pygame.display.flip()

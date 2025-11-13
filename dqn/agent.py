@@ -58,6 +58,7 @@ class DQNAgent:
         min_epsilon,
         alpha_q,
         alpha_h,
+        alpha_h_decay,
         discount_factor,
         learning_rate,
         batch_size,
@@ -67,8 +68,9 @@ class DQNAgent:
         logs_dir=LOGS_DIR,
         q_model_to_load=None,  # filename of pretrained Q model
         h_model_to_load=None,  # filename of pretrained H model
+        gif_name="agent.gif",
         render=True,
-        tamer=False
+        tamer=False,
     ):
         """ Initializes a DQN Agent
 
@@ -81,6 +83,7 @@ class DQNAgent:
             min_epsilon (float): minimum exploration rate (epsilon will be decayed to min_epsilon)
             alpha_q (float): action biasing weight for Q function
             alpha_h (float): action biasing weight for H function
+            alpha_h_decay (float): decay for the action biasing weight for H function
             discount_factor (float): discount factor for rewards
             learning_rate (float): learning rate for Q and H functions
             batch_size (int): learning batch size
@@ -90,6 +93,7 @@ class DQNAgent:
             logs_dir (string, optional): directory for logs. Defaults to LOGS_DIR.
             q_model_to_load (string, optional): file to load Q model. Defaults to None.
             h_model_to_load (string, optional): file to load H model. Defaults to None.
+            gif_name (str, optional): filename of saved gif of trained policy 
             render (bool, optional): renders environment. Defaults to True.
             tamer (bool, optional): allow human feedback. Defaults to False.
         """
@@ -102,6 +106,7 @@ class DQNAgent:
         self.logs_dir = logs_dir
         self.uuid = uuid.uuid4()
         self.ts_len = ts_len
+        self.gif_name = gif_name
         self.render = render
         self.tamer = tamer
         if self.render:
@@ -116,22 +121,26 @@ class DQNAgent:
         self.discount_factor = discount_factor
         self.alpha_q = alpha_q
         self.alpha_h = alpha_h
+        self.alpha_h_decay = alpha_h_decay
 
         # initialize networks
+        # get observation space
+        obs_dim = np.prod(self.env.observation_space.shape)
+
         # initialize Q
         self.Q = QNetwork(
-            self.env.observation_space.shape[0], self.env.action_space.n)
+            obs_dim, self.env.action_space.n)
         if q_model_to_load is not None:
             self.Q.load_state_dict(torch.load(
                 q_model_to_load, weights_only=True))
 
         self.target_Q = QNetwork(
-            self.env.observation_space.shape[0], self.env.action_space.n)
+            obs_dim, self.env.action_space.n)
         self.target_Q.load_state_dict(self.Q.state_dict())
 
         # initialize H
         self.H = QNetwork(
-            self.env.observation_space.shape[0], self.env.action_space.n)
+            obs_dim, self.env.action_space.n)
         if h_model_to_load is not None:
             self.H.load_state_dict(torch.load(
                 h_model_to_load, weights_only=True))
@@ -154,13 +163,23 @@ class DQNAgent:
         # Logger
         self.logger = Logger(episode_log_path, tamer_log_path, log_csv=True)
 
-    def act(self, state):
+    def act(self, state, eval=False):
         if random.random() > self.epsilon:
             with torch.no_grad():
                 q_values = self.Q(state)
                 h_values = self.H(state)
-                combined = q_values * self.alpha_q + h_values * self.alpha_h
-                return combined.max(1).indices.view(1, 1)
+                if eval:
+                    combined = q_values * self.alpha_q
+                else:
+                    combined = q_values * self.alpha_q + h_values * self.alpha_h
+
+                # break ties
+                max_val = combined.max().item()
+                max_actions = (combined == max_val).nonzero(
+                    as_tuple=False).flatten()
+                action = max_actions[torch.randint(0, len(max_actions), (1,))]
+                return action.view(1, 1)
+
         else:
             return torch.tensor([[self.env.action_space.sample()]], dtype=torch.long)
 
@@ -228,11 +247,11 @@ class DQNAgent:
                          feedback_batch.unsqueeze(1))
 
         # Optimize the model
-        self.optimizer.zero_grad()
+        self.H_optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        torch.nn.utils.clip_grad_value_(self.Q.parameters(), 100)
-        self.optimizer.step()
+        torch.nn.utils.clip_grad_value_(self.H.parameters(), 100)
+        self.H_optimizer.step()
 
     def train(
         self,
@@ -262,7 +281,10 @@ class DQNAgent:
         self.logger.csv_logger.close()
 
         print("\nSaving logs to database...")
-        self.logger.log_experiment(name="test name", date=datetime.today().strftime(
+        self.play(n_episodes=1, render=False,
+                  save_gif=True, gif_name=self.gif_name)
+        self.logger.log_gif(self.gif_name)
+        self.logger.log_experiment(name=name, date=datetime.today().strftime(
             '%Y-%m-%d'), algorithm="DQN-TAMER" if self.tamer else "DQN")
 
         if self.render:
@@ -290,7 +312,8 @@ class DQNAgent:
                 action.item())
             total_reward += reward
             reward = torch.tensor([reward])
-            done = truncated or terminated
+            done = terminated or (
+                self.max_steps is not None and ts > self.max_steps) or (self.max_steps is None and truncated)
 
             if terminated:
                 next_state = None
@@ -308,9 +331,10 @@ class DQNAgent:
                 feedback_ts = dt.datetime.now().time()
 
                 if feedback != 0:
-                    self.human_memory.push(state, action, feedback)
-                    self.logger.log_tamer_step(
-                        ep_idx, feedback_ts, feedback, reward)
+                    # self.logger.log_tamer_step(
+                    #     ep_idx, ts, feedback, reward)
+                    self.human_memory.push(
+                        state, action, torch.tensor([feedback]))
 
                     if self.render:
                         self.disp.render(self.env.render(), action.item())
@@ -332,7 +356,7 @@ class DQNAgent:
             # Decay epsilon and alpha_h
             if self.epsilon > self.min_epsilon:
                 self.epsilon -= self.epsilon_decay_step
-            self.alpha_h *= 0.9999
+            self.alpha_h *= self.alpha_h_decay
 
             if done:
                 ep_end_time = dt.datetime.now().time()
@@ -357,7 +381,7 @@ class DQNAgent:
             done = False
             tot_reward = 0
             for i in count():
-                action = self.act(state)
+                action = self.act(state, eval=True)
                 observation, reward, terminated, truncated, info = self.env.step(
                     action.item())
                 done = truncated or terminated
@@ -368,7 +392,7 @@ class DQNAgent:
 
                 if render:
                     self.disp.render(self.env.render(), action.item())
-                if i >= self.max_steps-1 or done:
+                if done or (self.max_steps is not None and i >= self.max_steps-1):
                     break
                 state = next_state
             ep_rewards.append(tot_reward)
@@ -377,7 +401,7 @@ class DQNAgent:
 
         # only saves gif of the last run
         if save_gif:
-            imageio.mimsave(gif_name, frames, fps=30)
+            imageio.mimsave(gif_name, frames, fps=30, loop=0)
         return ep_rewards
 
     def evaluate(self, n_episodes=100):
