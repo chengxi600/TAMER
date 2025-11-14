@@ -31,6 +31,9 @@ class QNetwork(nn.Module):
         self.layer2 = nn.Linear(128, 128)
         self.out_layer = nn.Linear(128, output_size)
 
+        nn.init.zeros_(self.out_layer.weight)
+        nn.init.zeros_(self.out_layer.bias)
+
     def forward(self, state):
         x = self.layer1(state)
         x = F.relu(x)
@@ -93,7 +96,7 @@ class DQNAgent:
             logs_dir (string, optional): directory for logs. Defaults to LOGS_DIR.
             q_model_to_load (string, optional): file to load Q model. Defaults to None.
             h_model_to_load (string, optional): file to load H model. Defaults to None.
-            gif_name (str, optional): filename of saved gif of trained policy 
+            gif_name (str, optional): filename of saved gif of trained policy
             render (bool, optional): renders environment. Defaults to True.
             tamer (bool, optional): allow human feedback. Defaults to False.
         """
@@ -173,10 +176,13 @@ class DQNAgent:
                 else:
                     combined = q_values * self.alpha_q + h_values * self.alpha_h
 
-                # break ties
-                max_val = combined.max().item()
-                max_actions = (combined == max_val).nonzero(
-                    as_tuple=False).flatten()
+                # break ties within a 1e-6 tolerance
+                max_val = combined.max()
+                mask = (combined - max_val).abs() < 1e-6
+
+                # SELECT ACTION INDICES (dimension=1)
+                max_actions = torch.where(mask)[1]
+
                 action = max_actions[torch.randint(0, len(max_actions), (1,))]
                 return action.view(1, 1)
 
@@ -280,13 +286,6 @@ class DQNAgent:
                 print('\nCleaning up...')
         self.logger.csv_logger.close()
 
-        print("\nSaving logs to database...")
-        self.play(n_episodes=1, render=False,
-                  save_gif=True, gif_name=self.gif_name)
-        self.logger.log_gif(self.gif_name)
-        self.logger.log_experiment(name=name, date=datetime.today().strftime(
-            '%Y-%m-%d'), algorithm="DQN-TAMER" if self.tamer else "DQN")
-
         if self.render:
             self.disp.close()
         if q_model_file_to_save is not None:
@@ -296,6 +295,17 @@ class DQNAgent:
         if h_model_file_to_save is not None:
             print(f'\nSaving H Model to {h_model_file_to_save}')
             self.H.save_model(h_model_file_to_save)
+
+        print("\nSaving logs to database...")
+        try:
+            self.play(n_episodes=1, render=False,
+                      save_gif=True, gif_name=self.gif_name)
+            self.logger.log_gif(self.gif_name)
+            self.logger.log_experiment(name=name, date=datetime.today().strftime(
+                '%Y-%m-%d'), algorithm="DQN-TAMER" if self.tamer else "DQN")
+
+        except Exception as e:
+            print(f"Exception: {e}. Failed to save logs to database")
 
     def _train_episode(self, ep_idx):
         state, _ = self.env.reset()
