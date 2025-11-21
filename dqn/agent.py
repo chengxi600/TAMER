@@ -3,7 +3,6 @@ Implementation of Deep Q Learning modified from
 https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 """
 
-from pathlib import Path
 import random
 import numpy as np
 import torch
@@ -20,8 +19,6 @@ from logger import Logger
 from interface import Interface
 from dqn.replay import ReplayBuffer, HumanTransition, Transition
 from datetime import datetime
-
-LOGS_DIR = Path(__file__).parent.joinpath('logs')
 
 
 class QNetwork(nn.Module):
@@ -68,7 +65,7 @@ class DQNAgent:
         target_update_interval,
         buffer_size,
         ts_len,
-        logs_dir=LOGS_DIR,
+        logger,
         q_model_to_load=None,  # filename of pretrained Q model
         h_model_to_load=None,  # filename of pretrained H model
         gif_name="agent.gif",
@@ -93,7 +90,7 @@ class DQNAgent:
             target_update_interval (int): frequency of updating target Q network
             buffer_size (int): buffer size for replay memory
             ts_len (float): temporal length of a timestep (seconds)
-            logs_dir (string, optional): directory for logs. Defaults to LOGS_DIR.
+            logger (Logger): logger object for logging 
             q_model_to_load (string, optional): file to load Q model. Defaults to None.
             h_model_to_load (string, optional): file to load H model. Defaults to None.
             gif_name (str, optional): filename of saved gif of trained policy
@@ -106,7 +103,6 @@ class DQNAgent:
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.target_update_interval = target_update_interval
-        self.logs_dir = logs_dir
         self.uuid = uuid.uuid4()
         self.ts_len = ts_len
         self.gif_name = gif_name
@@ -118,7 +114,7 @@ class DQNAgent:
 
         self.epsilon = epsilon
         self.min_epsilon = min_epsilon
-        self.epsilon_decay_step = (epsilon - min_epsilon) / num_episodes
+        self.epsilon_decay_step = (epsilon - min_epsilon) / (num_episodes/3)
 
         self.learning_rate = learning_rate
         self.discount_factor = discount_factor
@@ -156,15 +152,8 @@ class DQNAgent:
         self.memory = ReplayBuffer(buffer_size, Transition)
         self.human_memory = ReplayBuffer(buffer_size, HumanTransition)
 
-        # tamer log path
-        tamer_log_path = os.path.join(
-            self.logs_dir, "tamer", f'{self.uuid}.csv')
-        # episode log path
-        episode_log_path = os.path.join(
-            self.logs_dir, "episode", f'{self.uuid}.csv')
-
         # Logger
-        self.logger = Logger(episode_log_path, tamer_log_path, log_csv=True)
+        self.logger = logger
 
     def act(self, state, eval=False):
         if random.random() > self.epsilon:
@@ -363,14 +352,16 @@ class DQNAgent:
             if ts % self.target_update_interval == 0:
                 self.target_Q.load_state_dict(self.Q.state_dict())
 
-            # Decay epsilon and alpha_h
-            if self.epsilon > self.min_epsilon:
-                self.epsilon -= self.epsilon_decay_step
+            # Decay alpha_h
             self.alpha_h *= self.alpha_h_decay
 
             if done:
                 ep_end_time = dt.datetime.now().time()
                 return ep_start_time, ep_end_time, total_reward
+
+        # Decay epsilon after an episode
+        if self.epsilon > self.min_epsilon:
+            self.epsilon -= self.epsilon_decay_step
 
     def play(self, n_episodes=1, render=False, save_gif=False, gif_name="agent.gif"):
         """
@@ -381,7 +372,6 @@ class DQNAgent:
 
           Returns: list of cumulative episode rewards
         """
-        self.epsilon = 0
         ep_rewards = []
         frames = []
         self.env.reset()

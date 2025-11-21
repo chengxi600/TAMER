@@ -291,7 +291,7 @@ class TamerRL:
             if done or ts >= self.max_steps-1:
                 print(f'Reward: {tot_reward}')
                 ep_end_time = dt.datetime.now().time()
-                return ep_start_time, ep_end_time, tot_reward
+                break
 
             stdout.write('\b' * (len(str(ts)) + 1))
             state = next_state

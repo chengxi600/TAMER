@@ -50,18 +50,20 @@ def init_episode():
 
 
 class Logger:
-    def __init__(self, episode_log_path=None, tamer_log_path=None, log_csv=False):
+    def __init__(self, episode_log_path=None, tamer_log_path=None, log_csv=False, log_to_db=True):
         """The logger allows for writing logs to a CSV file and saving logs to the MongoDB database.
 
         Args:
             episode_log_path (_type_, optional): file path for the episode logs. Defaults to None.
             tamer_log_path (_type_, optional): file path for the timestep logs. Defaults to None.
             log_csv (bool, optional): whether to write to CSV. Defaults to False.
+            log_to_db (bool, optional): whether to write ressults to database. Defaults to True. 
         """
 
         # mapping from episode idx to an EpisodeLog
         self.episodes: dict[int, dict] = defaultdict(init_episode)
         self.log_csv = log_csv
+        self.log_to_db = log_to_db
         self.gif_url = ""
 
         if log_csv:
@@ -98,10 +100,13 @@ class Logger:
             ep_end_ts (str): episode end ts
             total_reward (int): total episode environment reward 
         """
-        self.episodes[episode_idx]["episode"] = episode_idx
-        self.episodes[episode_idx]["ep_start_ts"] = ep_start_ts
-        self.episodes[episode_idx]["ep_end_ts"] = ep_end_ts
-        self.episodes[episode_idx]["total_reward"] = total_reward
+
+        # don't save eval logs to episodes.
+        if ep_start_ts != "eval" and ep_end_ts != "eval":
+            self.episodes[episode_idx]["episode"] = episode_idx
+            self.episodes[episode_idx]["ep_start_ts"] = ep_start_ts
+            self.episodes[episode_idx]["ep_end_ts"] = ep_end_ts
+            self.episodes[episode_idx]["total_reward"] = total_reward
 
         if self.log_csv:
             self.csv_logger.log_episode_csv(episode_idx, ep_start_ts,
@@ -134,20 +139,21 @@ class Logger:
             date (str): date of experiment
             algorithm (str): algorithm used for this experiment. 
         """
-        url = 'https://hfrl-dashboard.vercel.app/api/logs'
+        if self.log_to_db:
+            url = 'https://hfrl-dashboard.vercel.app/api/logs'
 
-        episode_logs = [
-            EpisodeLog(**ep_dict) for ep_dict in self.episodes.values()
-        ]
-        experiment_log = ExperimentLog(
-            name=name,
-            date=date,
-            algorithm=algorithm,
-            gif_url=self.gif_url,
-            episode_logs=episode_logs
-        )
-        x = requests.post(url, json=experiment_log.model_dump(mode='json'))
-        print(x)
+            episode_logs = [
+                EpisodeLog(**ep_dict) for ep_dict in self.episodes.values()
+            ]
+            experiment_log = ExperimentLog(
+                name=name,
+                date=date,
+                algorithm=algorithm,
+                gif_url=self.gif_url,
+                episode_logs=episode_logs
+            )
+            x = requests.post(url, json=experiment_log.model_dump(mode='json'))
+            print(x)
 
 
 class CSVLogger:

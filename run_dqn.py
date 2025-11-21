@@ -4,6 +4,8 @@ from BlackJackObservationWrapper import BlackjackContinuousWrapper
 from OneHotObservationWrapper import OneHotObservationWrapper
 from dqn.agent import DQNAgent
 from dqn.configs import HYPERPARAMS
+from logger import Logger
+import os
 
 
 def main():
@@ -16,23 +18,31 @@ def main():
     #     render_mode="rgb_array"))
     lake_action_map = {0: 'left', 1: 'down', 2: 'right', 3: 'up'}
 
+    # tamer log path
+    tamer_log_path = "dqn/logs/tamer/step.csv"
+    # episode log path
+    episode_log_path = "dqn/logs/episode/eps.csv"
+
+    logger = Logger(episode_log_path, tamer_log_path,
+                    log_csv=True, log_to_db=True)
+
     agent = DQNAgent(
         **HYPERPARAMS['LunarLander-v3'],
-        num_episodes=20,
-        ts_len=0.3,
-        q_model_to_load=None,
+        num_episodes=10,
+        ts_len=0.5,
+        logger=logger,
+        q_model_to_load="dqn/saved_models/q_ll_20eps.pth",
         h_model_to_load=None,
-        gif_name="dqn-tamer_ll_20eps.gif",
+        gif_name="ll_dqntamer_10eps.gif",
         render=True,
         tamer=True)
 
     agent.train(
-        name="DQN-TAMER Lunar Lander 20 eps",
-        q_model_file_to_save="q_dqntamer_ll_20eps.pth",
-        h_model_file_to_save="h_dqntamer_ll_20eps.pth",
+        name="LL 300 eps",
+        q_model_file_to_save=None,
+        h_model_file_to_save=None,
         eval=True,
-        eval_interval=2
-    )
+        eval_interval=2)
 
     # agent.play(n_episodes=1, render=True, save_gif=True,
     #            gif_name="ll_dqn_300eps.gif")
