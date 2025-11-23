@@ -160,7 +160,8 @@ class TamerRL:
         logs_dir=LOGS_DIR,  # output directory for logs
         models_dir=MODELS_DIR,  # output directory for models
         q_model_to_load=None,  # filename of pretrained Q model
-        h_model_to_load=None  # filename of pretrained H model
+        h_model_to_load=None,  # filename of pretrained H model
+        random_seed=2025,  # random seed
     ):
         self.ts_len = ts_len
         self.env = env
@@ -170,6 +171,7 @@ class TamerRL:
         self.max_steps = max_steps
         self.action_map = action_map
         self.control_sharing = control_sharing
+        np.random.seed(random_seed)
 
         # init model
         if q_model_to_load is not None:
@@ -300,6 +302,8 @@ class TamerRL:
         if self.epsilon > self.min_eps:
             self.epsilon -= self.epsilon_step
         print("-----------------------")
+
+        return ep_start_time, ep_end_time, tot_reward
 
     async def train(self, model_file_to_save=None, eval=False, eval_interval=1):
         """

@@ -35,7 +35,8 @@ def main():
         h_model_to_load=None,
         gif_name="ll_dqntamer_10eps.gif",
         render=True,
-        tamer=True)
+        tamer=True,
+        random_seed=2025)
 
     agent.train(
         name="LL 300 eps",

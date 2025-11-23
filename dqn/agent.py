@@ -71,6 +71,7 @@ class DQNAgent:
         gif_name="agent.gif",
         render=True,
         tamer=False,
+        random_seed=2025,
     ):
         """ Initializes a DQN Agent
 
@@ -96,6 +97,7 @@ class DQNAgent:
             gif_name (str, optional): filename of saved gif of trained policy
             render (bool, optional): renders environment. Defaults to True.
             tamer (bool, optional): allow human feedback. Defaults to False.
+            random_seed(int, optional): random seed for random, numpy, and torch
         """
         self.env = env
         self.env.reset()
@@ -111,6 +113,10 @@ class DQNAgent:
         if self.render:
             self.disp = Interface(action_map=action_map,
                                   env_frame_shape=self.env.render().shape)
+
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
 
         self.epsilon = epsilon
         self.min_epsilon = min_epsilon
